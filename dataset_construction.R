@@ -37,9 +37,10 @@ df <- left_join(crsp, crspcomp, by = c("PERMNO" = "LPERMNO", "ymon")) %>%
 # NAs
 ########################################
 
-df <- df
-  #add na.locf
-
+# NA LOCF
+df <- df %>%
+  group_by(PERMNO) %>%
+  mutate_all(na.locf, na.rm=F)
 
 
 ########################################
@@ -121,11 +122,6 @@ df <- df %>%
     # AC = , #skipped
     
     ATO = sale / (NOA_OA - NOA_OL)
-    
-    
-    
-    
-    
     
     
   )
