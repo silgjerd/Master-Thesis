@@ -16,6 +16,7 @@ crspbetacapm <- read_csv("data_raw/crspbetacapm.csv",
                                           R2 = col_number(), RET = col_number(), 
                                           exret = col_number(), ivol = col_number(), 
                                           tvol = col_number()))
+ffind <- read_csv("data_raw/SIC2FF.csv")
 
 ##############################################################################
 # INITIAL CLEAN
@@ -24,6 +25,7 @@ crspbetacapm <- read_csv("data_raw/crspbetacapm.csv",
 # CRSP
 crsp <- crsp %>%
   filter(EXCHCD %in% c(1,2,3)) %>%
+  filter(SHRCD %in% c(10, 11)) %>%
   mutate(PRC = abs(PRC),
          LOGRET = log(1 + RET),
          ME = PRC * SHROUT,
@@ -63,7 +65,7 @@ crspbetacapm <- crspbetacapm %>%
 ##############################################################################
 
 df <- left_join(crsp, crspcomp, by = c("PERMNO" = "LPERMNO", "ymon")) %>%
-  select(-c(date, EXCHCD, GVKEY, datadate, fyear, indfmt, consol, popsrc, datafmt, conm, curcd, costat))
+  select(-c(date, SHRCD, EXCHCD, GVKEY, datadate, fyear, indfmt, consol, popsrc, datafmt, conm, curcd, costat))
 
 df <- left_join(df, ff, by = "ymon") #FF
 
@@ -71,11 +73,12 @@ df <- left_join(df, crspbeta, by = c("PERMNO", "ymon")) # IdioVol
 
 df <- left_join(df, crspbetacapm, by = c("PERMNO", "ymon")) # Beta
 
+df <- left_join(df, ffind, by = c("SICCD" = "SIC")) #FF industries
+
 df <- df %>% arrange(PERMNO, ymon) # sort
 
-
 ##############################################################################
-# NAs
+# FILTERS
 ##############################################################################
 
 # Remove firms with less than 24 months (2 years) of data
@@ -83,70 +86,37 @@ df <- df %>%
   group_by(PERMNO) %>%
   mutate(n = n()) %>%
   filter(n >= 24) %>%
-  select(-n)
+  select(-n) %>%
+  ungroup
+
+
+##############################################################################
+# NAs
+##############################################################################
 
 
 # NA LOCF
 df <- df %>%
   group_by(PERMNO) %>%
-  mutate_all(na.locf, na.rm=F)
+  mutate_all(na.locf, na.rm=F) %>%
+  ungroup
 
-# NA replace
-test <- df %>%
-  group_by(ymon) %>%
-  replace_na(list(ajex = 1,
-                  # act,
-                  # at,
-                  # capx,
-                  # ceq,
-                  # che,
-                  # cogs,
-                  # csho,
-                  # dlc,
-                  # dltt,
-                  # dp,
-                  # dvt,
-                  # epsfx,
-                  # gp,
-                  # ib,
-                  # invt,
-                  # ivao,
-                  # lct,
-                  # lt,
-                  # mib,
-                  # ni,
-                  # oiadp,
-                  # ppegt,
-                  # pstk,
-                  # pstkl,
-                  # pstkrv,
-                  # revt,
-                  # sale,
-                  # seq,
-                  # tie,
-                  txdb = 0,
-                  txditc = 0,
-                  txp = 0,
-                  wcapch = 0 ###
-                  # xad,
-                  # xrd,
-                  # xsga
-                  ))
 
-# NA impute UNFINISHED
-for (ymon in unique(df$ymon)) {
-  cd <- df %>% filter(ymon==ymon)
-  cmode <- getmode(cd$tie)
-  
-  
-}
 
-#testing
-df %>%
-  group_by(ymon) %>%
-  summarise(m = mean(tie,na.rm=T)) %>% plot
-getmode(df$tie)
-summary(df$tie)
+# # NA impute UNFINISHED
+# for (ymon in unique(df$ymon)) {
+#   cd <- df %>% filter(ymon==ymon)
+#   cmode <- getmode(cd$tie)
+#   
+#   
+# }
+# 
+# #testing
+# df %>%
+#   group_by(ymon) %>%
+#   summarise(m = mean(txp,na.rm=T)) %>% plot
+# getmode(df$txp)
+# summary(df$txp)
 
 
 
@@ -159,10 +129,13 @@ df <- df %>%
   group_by(PERMNO) %>%
   mutate(
     
-    ST_Rev = lag(LOGRET, 1), #OK
+    ST_Rev = lag(LOGRET, 1),
     
     r2_1 = c(rep(NA, 1), rollsum(LOGRET, 2)),
     r2_1 = lag(r2_1, 1),
+    
+    r6_2 = c(rep(NA, 3), rollsum(LOGRET, 4)),
+    r6_2 = lag(r6_2, 2),
     
     r12_2 = c(rep(NA, 9), rollsum(LOGRET, 10)),
     r12_2 = lag(r12_2, 2),
@@ -171,13 +144,20 @@ df <- df %>%
     r12_7 = lag(r12_7, 7),
     
     r36_13 = c(rep(NA, 22), rollsum(LOGRET, 23)),
-    r36_13 = lag(r36_13, 13)
-  )
+    r36_13 = lag(r36_13, 13),
+    
+    chmom = c(NA, diff(r6_2))
+  ) %>%
+  ungroup
+
+
+
 
 
 
 
 # Firm characteristics
+
 df <- df %>% #lagging
   group_by(PERMNO) %>%
   mutate(
@@ -186,7 +166,8 @@ df <- df %>% #lagging
     
     LME = log(ME),
     lagME = lag(ME, 12)
-  )
+  ) %>%
+  ungroup
 
 df <- df %>%
   mutate(
@@ -203,31 +184,25 @@ df <- df %>%
     BE = SH + txditc - PS,
     BEME = BE / lagME,
     
-    C = che / AT,
+    # C = che / AT,
     
     # CF = (ni + dp - (wcapch + capx)) / BE,
     
     CF2P = (ib + dp + txdb) / lagME,
     
-    CTO = sale / lagAT,
+    # CTO = sale / lagAT,
     
-    D2A = dp / AT,
+    # D2A = dp / AT,
     
     D2P = dvt / ME, ###dvt july t-1, ME should be LME log?
-    
-    # DPI2A = ,#skipped
     
     E2P = (epsfx * SHROUT) / ME, ###earnings in june
     
     # FC2Y = (xsga + xrd + xad) / sale,
     
-    # Investment = ,#skipped
-    
     Lev = (dltt + dlc) / (dltt + dlc + seq),
     
     Lturnover = VOL / SHROUT,
-    
-    # NI = ,#skipped
     
     NOA_OA = AT - che - ivao,
     NOA_OL = AT - dlc - dltt - mib - pstk - ceq,
@@ -236,35 +211,45 @@ df <- df %>%
     #OA_NCWC = AC, ###after AC
     #OA = OA_NCWC - dp / TA, ###lagged TA
     
-    OL = (cogs + xsga) / AT,
+    # OL = (cogs + xsga) / AT,
     
     # OP = (revt - (cogs + tie + xsga)) / BE,
     
-    PCM = (sale - cogs) / sale,
+    # PCM = (sale - cogs) / sale,
     
     PM = oiadp / sale,
     
-    PROF = gp / BE,
+    # PROF = gp / BE,
     
     Q = (AT + ME - che - txdb) / AT,
     
     RNA = oiadp / (NOA_OA - NOA_OL),
     
-    ROA = ib / lagAT,
+    # ROA = ib / lagAT,
     
-    ROE = ib / BE, ###lagged
+    # ROE = ib / BE, ###lagged
     
-    S2P = sale / ME,
+    # S2P = sale / ME,
     
-    SGA2S = xsga / sale,
+    SGA2S = xsga / sale
     
-    
-    # AC = , #skipped
-    
-    ATO = sale / (NOA_OA - NOA_OL)
+    # ATO = sale / (NOA_OA - NOA_OL)
     
     
-  )
+  ) %>%
+  ungroup
+
+
+
+# Age
+df <- df %>%
+  group_by(PERMNO) %>%
+  mutate(year = as.numeric(substr(ymon, 1, 4)),
+         startyear = cummin(year),
+         age = year - startyear) %>%
+  select(-c(year, startyear))
+
+
 
 
 
@@ -273,11 +258,13 @@ df <- df %>%
 ##############################################################################
 
 # dropping construction variables
-test <- df[,-c(8:44)] #CHECK INDEXES
-test <- test %>% select(-lagAT, lagME, ME)
+df_export <- df[,-c(10:50)] #CHECK INDEXES ####################
+df_export <- df_export %>% select(-c(ME, lagAT, lagME,
+                                     PS, SH, BE, NOA_OA, NOA_OL))
 
+df_export <- df_export %>% na.omit
 
-
+write.table(df_export, file = "data/dataset.csv", append = F, sep = ",", row.names = F)
 
 
 
