@@ -1,1 +1,4 @@
 *.xlsx
+*.Rhistory
+*.Rproj
+.Rproj.user/
