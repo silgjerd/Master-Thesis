@@ -11,13 +11,13 @@ df <- vroom("data_raw/crspdaily.csv",
 
 
 
-data <- df[1:100000,]
+data <- df
+# data <- df[1:30000,]
 # data <- data %>% drop_na(RET)
 
 data <- data %>%
   mutate(PRC = abs(PRC),
-         ymon = ymon(date)) %>%
-  arrange(PERMNO, date) #sort
+         ymon = ymon(date))
 
 # ============================================================
 # Spread
@@ -25,7 +25,9 @@ data <- data %>%
 spread <- data %>%
   mutate(dspread = ASK-BID) %>%
   group_by(PERMNO, ymon) %>%
-  summarise(spread = mean(dspread,na.rm=T))
+  summarise(spread = mean(dspread, na.rm=T)) %>%
+  mutate(spread = lag(spread, 1)) %>%
+  na.omit
 
 
 # ============================================================
@@ -33,9 +35,11 @@ spread <- data %>%
 # ============================================================
 
 zerotrading <- data %>%
-  group_by(PERMNO, ymon) %>%
   mutate(zerodays = VOL == 0) %>%
-  summarise(zerotrading = sum(zerodays, na.rm=T))
+  group_by(PERMNO, ymon) %>%
+  summarise(zerotrade = sum(zerodays, na.rm=T)) %>%
+  mutate(zerotrade = lag(zerotrade, 1)) %>%
+  na.omit
 
 
 # ============================================================
@@ -44,7 +48,10 @@ zerotrading <- data %>%
 
 maxret <- data %>%
   group_by(PERMNO, ymon) %>%
-  summarise(maxret = max(RET))
+  summarise(maxret = max(RET, na.rm=T)) %>%
+  mutate(maxret = lag(maxret, 1)) %>%
+  filter(is.finite(maxret)) %>%
+  na.omit
 
 
 # ============================================================
@@ -58,33 +65,43 @@ rel2high <- data %>%
          cummax = cummax(PRC),
          yearmax = rollmax(PRC, 250, fill = NA, align = "right"),
          yearmax = ifelse(is.na(yearmax), cummax, yearmax),
-         rel2high = PRC / yearmax)
+         rel2high = PRC / yearmax) %>%
+  ungroup %>%
+  group_by(PERMNO, ymon) %>%
+  filter(row_number()==n()) %>%
+  select(PERMNO, ymon, rel2high) %>%
+  ungroup %>%
+  group_by(PERMNO) %>%
+  mutate(rel2high = lag(rel2high, 1)) %>%
+  na.omit
 
 # ============================================================
 # Variance
 # ============================================================
-
-
 
 variance <- data %>%
   drop_na(RET) %>%
   group_by(PERMNO, ymon) %>%
   summarise(mvar = var(RET, na.rm=T)) %>%
   mutate(variance = rollmean(mvar, 2, fill = NA, align = "right")) %>% #slightly inaccurate
-  drop_na(variance)
-  
-  
+  drop_na(variance) %>%
+  select(PERMNO, ymon, variance) %>%
+  mutate(variance = lag(variance, 1)) %>%
+  na.omit
+
+
 
 # ============================================================
 # SUV
 # ============================================================
 
 suvdat <- data %>%
-  select(PERMNO, date, ymon, VOL, RET) %>%
+  select(PERMNO, ymon, VOL, RET) %>%
   mutate(abret = abs(RET)) %>%
-  drop_na(RET, VOL)
+  select(-RET) %>%
+  drop_na(abret, VOL)
 
-output <- c()
+suvoutput <- c()
 
 for (permno in unique(suvdat$PERMNO)){
   cat(permno, "\n")
@@ -104,118 +121,37 @@ for (permno in unique(suvdat$PERMNO)){
     
     coutput <- mean(cpred) / sd(residuals(cfit))
     
-    output <- bind_rows(output,
-                        tibble("PERMNO" = permno,
-                               "ymon" = ymons[month],
-                               "SUV" = coutput
-                        ))
+    suvoutput <- bind_rows(suvoutput,
+                           tibble("PERMNO" = permno,
+                                  "ymon" = ymons[month],
+                                  "suv" = coutput
+                           ))
     
     
   }
   
 }
 
-
-
-
-# WORKS
-ymons <- unique(suv$ymon)
-for (month in 3:length(ymons)){
-  
-  idxtrain <- c(ymons[month-2], ymons[month-1])
-  idxtest <- ymons[month]
-  
-  ctrain <- suv[suv$ymon %in% idxtrain,]
-  ctest <- suv[suv$ymon==idxtest,]
-  
-  cfit <- lm(VOL~abret, ctrain)
-  cpred <- predict(cfit, newdata = ctest)
-  
-  coutput <- mean(cpred) / sd(residuals(cfit))
-  
-  output <- bind_rows(output,
-                      tibble("PERMNO" = ctest$PERMNO[1],
-                             "ymon" = ymons[month],
-                             "SUV" = coutput
-                      ))
-  
-  
-}
-
-
-
-
-
-
-
-
-
-
-calcSUV <- function(data){
-  
-  if(length(unique(data$ymon))>=3){
-    output <- c()
-    ymons <- unique(data$ymon)
-    for (i in 3:length(ymons)){
-      
-      ctrain <- data[data$ymon %in% c(ymons[i-2], ymons[i-1]),]
-      ctest <- data[data$ymon == ymons[i],]
-      
-      cfit <- lm(VOL~abret, ctrain)
-      cpred <- predict(cfit, newdata = ctest)
-      
-      cresiduals <- ctest$VOL - cpred
-      coutput <- mean(cresiduals) / sd(residuals(cfit))
-      
-      output <- c(output, coutput)
-      
-    }
-    output <- c(rep(NA,2), output)
-    return(output)
-  } else {
-    return(rep(NA, length(ymons)))
-  }
-  
-
-}
-
-
-
-
-
-test <- c()
-for (comp in unique(suv$PERMNO)){
-  
-  cd <- suv[suv$PERMNO==comp,]
-  co <- tibble("PERMNO" = comp,
-               "ymon" = unique(cd$ymon),
-               "SUV" = calcSUV(cd))
-  test <- bind_rows(test, co)
-  
-  
-  
-}
-
-
-test %>%
-  group_by(PERMNO, ymon) %>%
-  summarise(m = mean(SUV))
-
-
-
-
-test <- suv %>%
+# lagging
+suvoutput <- suvoutput %>%
   group_by(PERMNO) %>%
-  mutate(SUV = calcSUV())
+  mutate(suv = lag(suv, 1)) %>%
+  na.omit
+
 
 
 # ============================================================
 # JOINING
 # ============================================================
 
+df_export <- full_join(spread, zerotrading, by = c("PERMNO", "ymon"))
+df_export <- full_join(df_export, maxret,  by = c("PERMNO", "ymon"))
+df_export <- full_join(df_export, rel2high,  by = c("PERMNO", "ymon"))
+df_export <- full_join(df_export, variance,  by = c("PERMNO", "ymon"))
+df_export <- full_join(df_export, suvoutput,  by = c("PERMNO", "ymon"))
 
 
-# TODO: join all and write
+write.table(df_export, file = "data/data_daily.csv", append = F, sep = ",", row.names = F)
 
 
 
