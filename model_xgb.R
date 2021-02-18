@@ -4,6 +4,8 @@ library(keras);library(caret);library(glmnet);library(xgboost)
 source("functions.R")
 load("data/traintest.RData")
 
+dir_results <- "model_results/results_xgb.csv"
+
 # =========================================================================
 # XGBOOST
 # =========================================================================
@@ -58,25 +60,27 @@ runXGB <- function(
 # HYPERPARAMS
 # =========================================================================
 params <- list(
-  "eta" = c(0.001,0.01,0.1),
-  "gamma" = c(0,1),
+  "eta" = c(0.01,0.1),
+  "gamma" = c(0),
   "max_depth" = c(7,15,25),
-  "min_child_weight" = c(1,3,5,7),
+  "min_child_weight" = c(5,9,15),
   "subsample" = c(1),
   "colsample_bytree" = c(0.3,0.5),
-  "alpha" = c(0,0.5,1),
-  "lambda" = c(0.01,0.1,1),
-  "nrounds" = c(800)
+  "alpha" = c(1),
+  "lambda" = c(0.1,1),
+  "nrounds" = c(2)
 )
 
-grid <- params %>% cross_df
+grid <- params %>% cross_df #hyperparameter grid, all combinations of params
 
 # =========================================================================
 # =========================================================================
 # RANDOM GRID SEARCH
 # =========================================================================
 
-i_sample <- sample(seq_len(nrow(grid))) #
+i_sample <- sample(seq_len(nrow(grid))) # random search of hyperparameter grid
+
+
 
 for (i in i_sample){
   
@@ -106,14 +110,12 @@ for (i in i_sample){
          "lambda" = grid$lambda[i],
          "nrounds" = grid$nrounds[i]
   ) %>%
-    write.table(file = "model_results/results_xgb.csv",
-                append = T, sep = ",", row.names = F, col.names = F)
+    write.table(file = dir_results,
+                append = T, sep = ",", row.names = F, col.names = !file.exists(dir_results))
   
-  # cat("\n=\n=\n=\n=\n=", round(i/nrow(grid),4)*100, "%\n=\n=\n=\n=") # PRINT PROGRESS
-  cat(round(i/nrow(grid),4)*100, "%\n") # PRINT PROGRESS
+  cat(round(which(i_sample==i)/nrow(grid),4)*100, "%\n") # PRINT PROGRESS
   
 }
-
 
 
 
