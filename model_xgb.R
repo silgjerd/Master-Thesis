@@ -66,17 +66,19 @@ params <- list(
   "colsample_bytree" = c(0.3,0.5),
   "alpha" = c(0,0.5,1),
   "lambda" = c(0.01,0.1,1),
-  "nrounds" = c(2, 3)
+  "nrounds" = c(800)
 )
 
 grid <- params %>% cross_df
 
 # =========================================================================
 # =========================================================================
-# GRID SEARCH
+# RANDOM GRID SEARCH
 # =========================================================================
 
-for (i in seq_len(nrow(grid))){
+i_sample <- sample(seq_len(nrow(grid))) #
+
+for (i in i_sample){
   
   # Fit model and get predictions
   pred <- runXGB(  
@@ -108,7 +110,7 @@ for (i in seq_len(nrow(grid))){
                 append = T, sep = ",", row.names = F, col.names = F)
   
   # cat("\n=\n=\n=\n=\n=", round(i/nrow(grid),4)*100, "%\n=\n=\n=\n=") # PRINT PROGRESS
-  cat(round(i/nrow(grid),4)*100, "\n") # PRINT PROGRESS
+  cat(round(i/nrow(grid),4)*100, "%\n") # PRINT PROGRESS
   
 }
 
