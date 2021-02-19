@@ -2,6 +2,7 @@ rm(list=ls());options(scipen=999,stringsAsFactors=F)
 library(tidyverse);library(vroom)
 library(keras);library(caret);library(glmnet);library(xgboost)
 source("functions.R")
+
 load("data/traintest.RData")
 
 dir_results <- "model_results/results_xgb.csv"
@@ -59,16 +60,17 @@ runXGB <- function(
 # =========================================================================
 # HYPERPARAMS
 # =========================================================================
+
 params <- list(
   "eta" = c(0.01,0.1),
-  "gamma" = c(0),
-  "max_depth" = c(7,15,25),
+  "gamma" = c(0,1),
+  "max_depth" = c(5,7,15),
   "min_child_weight" = c(5,9,15),
   "subsample" = c(1),
-  "colsample_bytree" = c(0.3,0.5),
+  "colsample_bytree" = c(0.5,0.7,0.9),
   "alpha" = c(1),
-  "lambda" = c(0.1,1),
-  "nrounds" = c(2)
+  "lambda" = c(0.01,1),
+  "nrounds" = c(800)
 )
 
 grid <- params %>% cross_df #hyperparameter grid, all combinations of params
@@ -79,8 +81,6 @@ grid <- params %>% cross_df #hyperparameter grid, all combinations of params
 # =========================================================================
 
 i_sample <- sample(seq_len(nrow(grid))) # random search of hyperparameter grid
-
-
 
 for (i in i_sample){
   
@@ -98,8 +98,9 @@ for (i in i_sample){
   )
   
   # Write results
-  tibble("MSE" = mean((pred - y_test)^2),
-         "CORREL" = cor(pred, y_test)[1],
+  tibble("MSE" = mevaluate(pred, y_test)[["MSE"]],
+         "COR" = mevaluate(pred, y_test)[["COR"]],
+         "SCORE" = mevaluate(pred, y_test)[["SCORE"]],
          "eta" = grid$eta[i],
          "gamma" = grid$gamma[i],
          "max_depth" = grid$max_depth[i],
@@ -118,14 +119,42 @@ for (i in i_sample){
 }
 
 
+# =========================================================================
+# FEATURE IMPORTANCE
+# =========================================================================
 
 
 
+# Train
+mxgb <- xgb.train(
+  
+  eta = 0.1,
+  gamma = 0,
+  max_depth = 7,
+  min_child_weight = 9,
+  subsample = 1,
+  colsample_bytree = 0.5,
+  alpha = 1,
+  lambda = 1,
+  nrounds = 800,
+  
+  data = xgb.DMatrix(x_train, label = y_train),
+  booster = "gbtree",
+  objective = "reg:squarederror",
+  tree_method = "auto",
+  early_stopping_rounds = 10,
+  watchlist = list(train = xgb.DMatrix(x_train, label = y_train),
+                   val = xgb.DMatrix(x_test, label = y_test)),
+  eval_metric = "rmse",
+  verbose = 1
+)
+
+# Importance
+importance <- xgb.importance(model = mxgb)
+xgb.plot.importance(importance)
 
 
-
-
-
-
+pred <- predict(mxgb, xgb.DMatrix(x_test, label = y_test))
+plot(pred, y_test)
 
 
