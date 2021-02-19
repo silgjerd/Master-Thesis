@@ -64,7 +64,10 @@ crspbetacapm <- crspbetacapm %>%
 compratios <- compratios %>%
   mutate(ymon = ymon(public_date)) %>%
   select(-c(adate, qdate, public_date)) %>%
-  rename(rna = pretret_noa)
+  rename(rna = pretret_noa) %>%
+  group_by(permno) %>%
+  mutate(ymon = lead(ymon, 1)) %>%
+  ungroup
 
 ##############################################################################
 # JOIN
