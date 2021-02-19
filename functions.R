@@ -34,3 +34,20 @@ rangenorm <- function(df, x_vars, y_vars, split_index, range_max = 1, range_min 
   return(df_norm)
 }
 
+# Model evaluation function
+mevaluate <- function(pred, y_test){
+  
+  cmse <- mean((pred - y_test)^2)
+  ccor <- cor(pred, y_test)[1]
+  cscore <- ccor / cmse
+  
+  eval <- tibble("MSE" = cmse,
+                 "COR" = ccor,
+                 "SCORE" = cscore)
+  
+  return(eval)
+}
+
+
+
+
