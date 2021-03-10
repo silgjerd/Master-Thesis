@@ -2,24 +2,53 @@ rm(list=ls());options(scipen=999,stringsAsFactors=F)
 library(tidyverse);library(zoo);library(lubridate);library(vroom);library(mice);library(Hmisc)
 source("functions.R")
 
-df <- read_csv("data_raw/refinitiv_esg.csv", 
-               col_types = cols(Date = col_date(format = "%d.%m.%Y"), 
-                                `Env R&D Expenditures To Revenues in million` = col_double()))
+
+df <- vroom("data_raw/esg_set1.csv", 
+             col_types = cols(Date = col_date(format = "%d.%m.%Y"), 
+                              `Lost Days To Total Days` = col_double()))
+
+# df2 <- vroom("data_raw/esg_set2.csv", 
+#              col_types = cols(Date = col_date(format = "%d.%m.%Y"), 
+#                               `Lost Days To Total Days Score` = col_double(), 
+#                               `Turnover of Employees Score` = col_double()))
+
+dfscores <- vroom("data_raw/esg_set3.csv", 
+             col_types = cols(Date = col_date(format = "%d.%m.%Y")))
+
+
+
 
 # =========================================================================
 # PREPROCESS
 # =========================================================================
 
 df <- df %>%
-  arrange(Ticker, Date) %>%
+  drop_na(Date) %>%
+  arrange(TRTicker, Date) %>%
   mutate(ymon = ymon(Date),
          CUSIP = substr(CUSIP, 1, 8)
          ) %>%
-  group_by(Ticker) %>%
+  group_by(TRTicker) %>%
   fill(CUSIP) %>%
   fill(CUSIP, .direction = "up") %>%
   drop_na(CUSIP) %>%
   ungroup
+
+dfscores <- dfscores %>%
+  drop_na(Date) %>%
+  arrange(TRTicker, Date) %>%
+  mutate(ymon = ymon(Date),
+         CUSIP = substr(CUSIP, 1, 8)
+  ) %>%
+  group_by(TRTicker) %>%
+  fill(CUSIP) %>%
+  fill(CUSIP, .direction = "up") %>%
+  drop_na(CUSIP) %>%
+  ungroup
+
+
+
+
 
 # Using CRSP CUSIP converted (not necessary, just remove ninth control digit)
 # cusip_raw <- df %>% select(CUSIP) %>% na.omit %>% pull %>% unique %>% sort
@@ -50,8 +79,8 @@ df <- df %>%
     femexec = `Women Managers`,
     fememp = `Women Employees`,
     turnemp = `Turnover of Employees`,
-    #tradeunion = ,
-    #lostdays = ,
+    tradeunion = `Trade Union Representation`,
+    lostdays = `Lost Days To Total Days`,
     boardindep = `Independent Board Members`,
     boardfem = `Board Gender Diversity, Percent`,
     boardattend = `Board Meeting Attendance Average`,
@@ -62,49 +91,96 @@ df <- df %>%
     boardcomp = `Board Member Compensation`
     
   ) %>%
-  select(-c(`SOx Emissions To Revenues USD in million`,
-            `NOx Emissions To Revenues USD in million`,
-            `Policy Human Rights`, `Policy Responsible Marketing`, `Product Responsibility Monitoring`, `Policy Data Privacy`,
-            `Average Training Hours`, `CSR Sustainability Reporting`, `Env R&D Expenditures To Revenues in million`,
-            `Board Background and Skills`, `Independent Board Members_1`))
+  select(-c(`CUSIP (extended)`, `CUSIP Code`, ISIN, `ISIN Code`, SEDOL,
+            TRTicker, Date))
 
+dfscores <- dfscores %>%
+  rename(
+    
+    esgscore = `ESG Score`,
+    esgcomb = `ESG Combined Score`,
+    esgcontr = `ESG Controversies Score`,
+    esge = `Environmental Pillar Score`,
+    esgg = `Governance Pillar Score`,
+    esgs = `Social Pillar Score`,
+    esgres = `Resource Use Score`,
+    esgemi = `Emissions Score`,
+    esginn = `Environmental Innovation Score`,
+    esgwor = `Workforce Score`,
+    esghum = `Human Rights Score`,
+    esgcomm = `Community Score`,
+    esgpro = `Product Responsibility Score`,
+    esgman = `Management Score`,
+    esgcsr = `CSR Strategy Score`
+    
+    
+  ) %>%
+  select(-c(`CUSIP (extended)`, `CUSIP Code`, ISIN, `ISIN Code`, SEDOL,
+            TRTicker, Date))
 
+# =========================================================================
+# JOIN
+# =========================================================================
+
+df <- full_join(df, dfscores, by = c("CUSIP", "ymon"))
 
 
 # =========================================================================
 # NAs
 # =========================================================================
 
-View(sort(colSums(is.na(df)) / nrow(df) * 100))
 
 
-# df <- df %>%
-#   mutate(
-#     
-#     carbonint = impute(carbonint, mean),
-#     energyint = impute(energyint, mean),
-#     waterint = impute(waterint, mean),
-#     wastegen = impute(wastegen, mean)
-#     # femexec
-#     # fememp
-#     # turnemp
-#     # tradeunion
-#     # lostdays
-#     # boardindep
-#     # boardfem
-#     # boardattend
-#     # boardsize
-#     # execcomp
-#     # nonexecs
-#     # boardterm
-#     # boardcomp
-#     
-#     
-#   )
+# NA LOCF forward
+df <- df %>%
+  group_by(CUSIP) %>%
+  mutate_at(vars(-c(CUSIP, ymon)), na.locf, na.rm=F) %>%
+  ungroup
+
+# NA LOCF backward (REMOVE?)
+df <- df %>%
+  group_by(CUSIP) %>%
+  arrange(CUSIP, desc(ymon)) %>%
+  mutate_at(vars(-c(CUSIP, ymon)), na.locf, na.rm=F) %>%
+  arrange(CUSIP, ymon) %>%
+  ungroup
 
 
 
+df <- df %>%
+  mutate(
 
+    carbonint  = impute(carbonint, mean),
+    energyint  = impute(energyint, mean),
+    waterint   = impute(waterint, mean),
+    wastegen   = impute(wastegen, mean),
+    femexec    = impute(femexec, mean),
+    fememp     = impute(fememp, mean),
+    turnemp    = impute(turnemp, mean),
+    tradeunion = ifelse(is.na(tradeunion), 0, tradeunion),
+    lostdays   = ifelse(is.na(lostdays), 0, lostdays)
+    # boardindep
+    # boardfem
+    # boardattend
+    # boardsize
+    # execcomp
+    # nonexecs
+    # boardterm
+    # boardcomp
+
+
+  )
+
+df <- df %>% na.omit #maybe remove
+
+View(sort(colSums(is.na(df)) / nrow(df) * 100)) #check
+
+
+# df %>% #check number of var NAs per ymon
+#   filter(ymon == 199901) %>%
+#   is.na() %>%
+#   rowSums()
+  
 
 
 # =========================================================================
