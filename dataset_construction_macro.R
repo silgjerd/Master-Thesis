@@ -1,5 +1,5 @@
 rm(list=ls());options(scipen=999,stringsAsFactors=F)
-library(tidyverse);library(zoo);library(lubridate);library(vroom)
+library(tidyverse);library(zoo);library(lubridate);library(vroom);library(factoextra)
 source("functions.R")
 
 dir <- "data_macro/"
@@ -192,7 +192,9 @@ for (i in 1:(nrow(df)-11)){
   
 }
 
-plot(pcout)
+plot(pcout, type = "l")
+plot(tail(as.Date(paste0(df$ymon,"01"), format = "%Y%m%d"), length(pcout)), pcout, type = "l")
+
 matplot(pcout, type="p", add=T)
 
 
@@ -209,12 +211,11 @@ df_export <- df_export %>%
   na.omit
 
 
-
 write.table(df_export, "data/data_macro.csv", append = F, sep = ",", row.names = F)
 
 
 #TESTINGGGGG ###########################################################
-library(factoextra)
+
 
 cpca <- prcomp(pcadat)
 fviz_eig(cpca) #scree plot
@@ -284,7 +285,35 @@ fit <- lm(RET ~ macropc1, df)
 summary(fit)
 plot(df$macropc1, df$RET)
 
+# =========================================================================
+# ETS forecasting
+# =========================================================================
+library(forecast)
+fdat <- df %>% select(-ymon)
 
+for (i in 1:ncol(fdat)){
+  cat("COL:", i, "\n")
+  
+  for (j in (nrow(fdat)-1):100){
+    cat("ROW:", j, "\n")
+    
+    cts <- ts(fdat[1:j,i] %>% pull, start = c(198410, 1), frequency = 12)
+    cm <- ets(cts, model = "ZZZ")
+    cf <- cm %>% forecast(h = 1)
+    cf <- cf[["mean"]][1]
+    fdat[j+1,i] <- cf
+    
+    cat(cf, "\n")
+    
+  }
+}
+
+
+
+##
+
+plot(as.Date(paste0(df$ymon,"01"), format = "%Y%m%d"),
+     pc1, type = "l")
 
 
 
