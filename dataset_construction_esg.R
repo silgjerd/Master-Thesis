@@ -146,7 +146,7 @@ df <- df %>%
   ungroup
 
 
-
+# Impute NAs
 df <- df %>%
   mutate(
 
@@ -171,6 +171,10 @@ df <- df %>%
 
   )
 
+# Bad values filter
+df <- df %>%
+  filter(execcomp >= 0)
+
 df <- df %>% na.omit #maybe remove
 
 View(sort(colSums(is.na(df)) / nrow(df) * 100)) #check
@@ -180,7 +184,23 @@ View(sort(colSums(is.na(df)) / nrow(df) * 100)) #check
 #   filter(ymon == 199901) %>%
 #   is.na() %>%
 #   rowSums()
-  
+
+# =========================================================================
+# TRANSFORMATIONS
+# =========================================================================
+
+df <- df %>%
+  mutate(
+    carbonint = log(1 + carbonint),
+    energyint = log(1 + energyint),
+    waterint  = log(1 + waterint),
+    wastegen  = log(1 + wastegen),
+    
+    execcomp  = log(1 + execcomp),
+    boardcomp = log(1 + boardcomp)
+  )
+
+
 
 
 # =========================================================================
@@ -192,7 +212,20 @@ write.table(df, file = "data/data_esg.csv", append = F, sep = ",", row.names = F
 
 
 
+# =========================================================================
+# EXPLORATION
+# =========================================================================
 
+library(corrplot);library(RColorBrewer);library(PerformanceAnalytics)
+plotdat <- df %>%
+  select(-c(CUSIP, ymon)) #%>%
+  sample_n(500)
+
+
+chart.Correlation(plotdat, histogram = T, pch = 19)
+
+M <- cor(plotdat)
+corrplot(M, method = "color")
 
 
 
