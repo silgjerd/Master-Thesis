@@ -16,7 +16,7 @@ getmode <- function(v) {
 }
 
 # Range normalization train test
-rangenorm <- function(df, x_vars, y_vars, split_index, range_max = 1, range_min = 0){
+rangenorm <- function(df, x_vars, y_vars, split_index, range_min = 0, range_max = 1){
   
   train <- df[split_index, x_vars]
   cmin <- sapply(train, min)
