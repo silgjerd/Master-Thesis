@@ -1,9 +1,9 @@
 rm(list=ls());options(scipen=999,stringsAsFactors=F)
 library(tidyverse);library(vroom)
-library(keras);library(caret);library(glmnet);library(xgboost)
+library(keras);library(caret);library(glmnet);library(xgboost);library(SHAPforxgboost)
 source("functions.R")
 
-load("data/traintest.RData")
+load("data/traintest_all.RData")
 
 dir_results <- "model_results/results_xgb.csv"
 
@@ -109,7 +109,9 @@ for (i in i_sample){
          "colsample_bytree" = grid$colsample_bytree[i],
          "alpha" = grid$alpha[i],
          "lambda" = grid$lambda[i],
-         "nrounds" = grid$nrounds[i]
+         "nrounds" = grid$nrounds[i],
+         "executed" = Sys.time(),
+         "tag" = "test"
   ) %>%
     write.table(file = dir_results,
                 append = T, sep = ",", row.names = F, col.names = !file.exists(dir_results))
@@ -124,18 +126,17 @@ for (i in i_sample){
 # =========================================================================
 
 
-
 # Train
 mxgb <- xgb.train(
   
   eta = 0.1,
   gamma = 0,
   max_depth = 7,
-  min_child_weight = 9,
+  min_child_weight = 15,
   subsample = 1,
   colsample_bytree = 0.5,
   alpha = 1,
-  lambda = 1,
+  lambda = 0.1,
   nrounds = 800,
   
   data = xgb.DMatrix(x_train, label = y_train),
@@ -147,6 +148,7 @@ mxgb <- xgb.train(
                    val = xgb.DMatrix(x_test, label = y_test)),
   eval_metric = "rmse",
   verbose = 1
+  
 )
 
 # Importance
@@ -155,6 +157,15 @@ xgb.plot.importance(importance)
 
 
 pred <- predict(mxgb, xgb.DMatrix(x_test, label = y_test))
+eval <- mevaluate(pred, y_test)
+eval
+
 plot(pred, y_test)
+
+
+# SHAP
+shap_long <- shap.prep(xgb_model = mxgb, X_train = x_train)
+shap_long <- shap_long %>% filter(variable %in% c("macropc1", "r12_2"))
+shap.plot.summary(shap_long)
 
 
