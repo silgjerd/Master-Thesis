@@ -1,4 +1,5 @@
 *.xlsx
+*.csv
 *.Rhistory
 *.Rproj
 *.png
