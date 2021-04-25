@@ -11,8 +11,8 @@ df <- vroom("data_raw/crspdaily.csv",
 
 
 
-data <- df
-# data <- df[1:30000,]
+#data <- df
+data <- df[1:30000,]
 # data <- data %>% drop_na(RET)
 
 data <- data %>%
@@ -22,6 +22,7 @@ data <- data %>%
 # ============================================================
 # Spread
 # ============================================================
+
 spread <- data %>%
   mutate(dspread = ASK-BID) %>%
   group_by(PERMNO, ymon) %>%
@@ -84,9 +85,9 @@ variance <- data %>%
   group_by(PERMNO, ymon) %>%
   summarise(mvar = var(RET, na.rm=T)) %>%
   mutate(variance = rollmean(mvar, 2, fill = NA, align = "right")) %>% #slightly inaccurate
+  mutate(variance = lag(variance, 1)) %>%
   drop_na(variance) %>%
   select(PERMNO, ymon, variance) %>%
-  mutate(variance = lag(variance, 1)) %>%
   na.omit
 
 
