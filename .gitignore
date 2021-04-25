@@ -1,4 +1,10 @@
 *.xlsx
 *.Rhistory
 *.Rproj
+*.png
 .Rproj.user/
+data/
+data_macro/
+data_raw/
+figures/
+model_results/
