@@ -1,10 +1,11 @@
 rm(list=ls());options(scipen=999,stringsAsFactors=F)
-library(tidyverse);library(vroom);library(recipes);library(rsample)
+library(tidyverse);library(vroom);library(recipes);library(rsample);library(caret)
 source("functions.R")
 
 # Import
 df <- vroom("data/dataset.csv")
 df <- df %>% na.omit
+
 
 
 # =========================================================================
@@ -59,11 +60,35 @@ df <- df %>%
     
   ))
 
-
+# df <- df %>% select(-macropc1)
 
 # =========================================================================
 # Preprocessing
 # =========================================================================
+
+# Industry dummies
+library(mltools);library(data.table)
+dummies <- one_hot(as.data.table(as.factor(df$FF_12)))
+colnames(dummies) <- paste0("ind_", 1:12)
+df <- bind_cols(df, dummies)
+
+# Sort by ymon
+df <- df %>% arrange(ymon)
+
+
+# identifiers <- df %>%
+#   select(c(
+#     PERMNO,
+#     SICCD,
+#     CUSIP,
+#     PRC,
+#     VOL,
+#     SHROUT,
+#     LOGRET,
+#     ymon,
+#     FF_12
+#   ))
+
 
 # Exclude variables
 df <- df %>%
@@ -78,6 +103,8 @@ df <- df %>%
     ymon,
     FF_12
   ))
+
+
 
 
 
@@ -102,7 +129,7 @@ y_vars <- "RET"
 split_index <- 1:floor(split_ratio * nrow(df))
 
 # Normalizing
-df <- rangenorm(df, x_vars, y_vars, split_index, 0.5, -0.5)
+df <- rangenorm(df, x_vars, y_vars, split_index, -0.5, 0.5)
 
 # Train test split
 train <- df[ split_index,]
@@ -116,7 +143,7 @@ y_test <- test[y_vars] %>% as.matrix
 
 
 # Write data
-filename <- "traintest_exesg"
+filename <- "x_fullsample"
 
 save(x_train, y_train, x_test, y_test, file = paste0("data/", filename, ".RData"))
 write.table(df, file = paste0("data/", filename, ".csv"), append = F, sep = ",", row.names = F)
@@ -124,28 +151,3 @@ write.table(df, file = paste0("data/", filename, ".csv"), append = F, sep = ",",
 
 
 
-
-###################TESTING
-
-# library(corrplot)
-# M<-cor(df)
-# 
-# corrplot(M, method = "color", type = "lower")
-# 
-# summary(df)
-# 
-# 
-# 
-
-
-test <- df %>%
-  group_by(ymon) %>%
-  summarise(n = n())
-
-test <- df %>%
-  group_by(PERMNO) %>%
-  summarise(n = n())
-
-test <- df %>%
-  group_by(FF_12) %>%
-  summarise(n = n())
