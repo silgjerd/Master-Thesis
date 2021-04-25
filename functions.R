@@ -1,9 +1,16 @@
-
-
 # Yearmon
 ymon <- function(date) {
   return(paste0(year(date), ifelse(nchar(month(date))==1, paste0("0", month(date)), month(date))))
 }
+
+# Save plot
+plotsave <- function(title, width=166, ratio=11/16){ #function to save plot
+  height <- floor(width * ratio)
+  ggsave(title,
+         width = width,
+         height = height,
+         dpi = 500,
+         units = "mm")}
 
 # Mode
 getmode <- function(v) {
@@ -39,15 +46,25 @@ mevaluate <- function(pred, y_test){
   
   cmse <- mean((pred - y_test)^2)
   ccor <- cor(pred, y_test)[1]
+  crsq <- ccor^2
   cscore <- ccor / cmse
   
   eval <- tibble("MSE" = cmse,
                  "COR" = ccor,
+                 "RSQ" = crsq,
                  "SCORE" = cscore)
   
   return(eval)
 }
 
+# Evaluate rets by trading
+tradeevaluate <- function(rets){
+  
+  # Plot
+  plot(cumprod(1 + rets), type = "l")
+  
+  return(summary(rets))
+}
 
 
 
