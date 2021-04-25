@@ -3,7 +3,7 @@ library(tidyverse);library(vroom)
 library(keras);library(caret);library(glmnet);library(xgboost);library(SHAPforxgboost)
 source("functions.R")
 
-load("data/traintest_all.RData")
+load("data/x_fullsample.RData")
 
 dir_results <- "model_results/results_xgb.csv"
 
@@ -64,12 +64,12 @@ runXGB <- function(
 params <- list(
   "eta" = c(0.01,0.1),
   "gamma" = c(0,1),
-  "max_depth" = c(5,7,15),
+  "max_depth" = c(3,5,7,15),
   "min_child_weight" = c(5,9,15),
-  "subsample" = c(1),
+  "subsample" = c(0.6,0.8,0.9),
   "colsample_bytree" = c(0.5,0.7,0.9),
-  "alpha" = c(1),
-  "lambda" = c(0.01,1),
+  "alpha" = c(0,0.1,0.5,1),
+  "lambda" = c(0.01,0.1,1),
   "nrounds" = c(800)
 )
 
@@ -81,6 +81,7 @@ grid <- params %>% cross_df #hyperparameter grid, all combinations of params
 # =========================================================================
 
 i_sample <- sample(seq_len(nrow(grid))) # random search of hyperparameter grid
+# i_sample <- i_sample[5:105]
 
 for (i in i_sample){
   
@@ -129,14 +130,38 @@ for (i in i_sample){
 # Train
 mxgb <- xgb.train(
   
-  eta = 0.1,
+  eta = 0.01,
   gamma = 0,
-  max_depth = 7,
-  min_child_weight = 15,
+  max_depth = 15,
+  min_child_weight = 5,
   subsample = 1,
   colsample_bytree = 0.5,
   alpha = 1,
-  lambda = 0.1,
+  lambda = 1,
+  nrounds = 800,
+  
+  data = xgb.DMatrix(x_train, label = y_train),
+  booster = "gbtree",
+  objective = "reg:squarederror",
+  tree_method = "auto",
+  early_stopping_rounds = 10,
+  watchlist = list(train = xgb.DMatrix(x_train, label = y_train),
+                   val = xgb.DMatrix(x_test, label = y_test)),
+  eval_metric = "rmse",
+  verbose = 1
+  
+)
+
+mxgb <- xgb.train( #best on x
+  
+  eta = 0.1,
+  gamma = 1,
+  max_depth = 3,
+  min_child_weight = 15,
+  subsample = 1,
+  colsample_bytree = 0.5,
+  alpha = 0.5,
+  lambda = 1,
   nrounds = 800,
   
   data = xgb.DMatrix(x_train, label = y_train),
@@ -153,14 +178,19 @@ mxgb <- xgb.train(
 
 # Importance
 importance <- xgb.importance(model = mxgb)
+importance <- data.table::as.data.table(importance %>% filter(Feature != "macropc1"))
 xgb.plot.importance(importance)
 
 
+
+# Test
 pred <- predict(mxgb, xgb.DMatrix(x_test, label = y_test))
 eval <- mevaluate(pred, y_test)
-eval
 
+eval
 plot(pred, y_test)
+abline(a=0,b=1)
+abline(a=summary(lm(y_test~pred))$coef[1],b=summary(lm(y_test~pred))$coef[2],col="red")
 
 
 # SHAP
