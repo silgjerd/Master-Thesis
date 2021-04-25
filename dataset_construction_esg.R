@@ -177,7 +177,7 @@ df <- df %>%
 
 df <- df %>% na.omit #maybe remove
 
-View(sort(colSums(is.na(df)) / nrow(df) * 100)) #check
+# View(sort(colSums(is.na(df)) / nrow(df) * 100)) #check
 
 
 # df %>% #check number of var NAs per ymon
@@ -199,6 +199,9 @@ df <- df %>%
     execcomp  = log(1 + execcomp),
     boardcomp = log(1 + boardcomp)
   )
+
+
+
 
 
 
@@ -228,6 +231,29 @@ M <- cor(plotdat)
 corrplot(M, method = "color")
 
 
+# PCA
+library(factoextra)
+pcadat <- df %>%
+  filter(CUSIP == "11135F10") %>%
+  select(-c(CUSIP, ymon))
+
+cpca <- prcomp(pcadat)
+fviz_eig(cpca) #scree plot
+
+pc1 <- cpca$x[,1]
+plot(pc1, type = "l")
+
+pc2 <- cpca$x[,2]
+plot(pc2, type = "l")
+
+# Aggregation
+
+
+test <- df %>% filter(ymon > 199301 & ymon < 2021)
+test$year <- substr(test$ymon, 1, 4)
+theyears <- unique(test$year)
+test <- aggregate(test %>% select(-c(CUSIP, ymon, year)), list(test$year), mean)
+plot(theyears, test$boardsize, type = "l")
 
 
 
