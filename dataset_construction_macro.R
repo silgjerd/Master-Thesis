@@ -1,5 +1,5 @@
 rm(list=ls());options(scipen=999,stringsAsFactors=F)
-library(tidyverse);library(zoo);library(lubridate);library(vroom);library(factoextra)
+library(tidyverse);library(zoo);library(lubridate);library(vroom);library(factoextra);library(ClustOfVar)
 source("functions.R")
 
 dir <- "data_macro/"
@@ -161,9 +161,6 @@ df <- df %>%
 
 df <- df %>% na.omit
 
-
-
-
 # =========================================================================
 # PCA
 # =========================================================================
@@ -184,9 +181,6 @@ for (i in 1:(nrow(df)-11)){
   
   cpc <- cpca$x[,1] %>% tail(1) #last obs
   
-  #cpc <- (1 / (1 + exp(-cpc))) #sigmoid
-  #cpc <- ifelse(cpc >= 0, 0, cpc) #neg relu
-  
   pcout <- c(pcout, cpc)
   
   
@@ -197,7 +191,99 @@ plot(tail(as.Date(paste0(df$ymon,"01"), format = "%Y%m%d"), length(pcout)), pcou
 
 matplot(pcout, type="p", add=T)
 
+# =========================================================================
+# CLUSTERS
+# =========================================================================
 
+### GROUPING
+kmsdat <- df %>% select(-ymon)
+
+tree <- hclustvar(kmsdat %>% as.matrix)
+stab <- stability(tree, B=4)
+
+nclusters <- 5
+kms <- kmeansvar(kmsdat %>% as.matrix, init = nclusters)
+summary(kms)
+plot(tree)
+
+cluster_names <- paste0("macroc_", 1:nclusters)
+result <- c()
+
+for (i in 1:nclusters){
+  
+  cat(cluster_names[i], "\n")
+  
+  select_cluster <- kms$cluster[kms$cluster==i] %>% names
+  cdf <- kmsdat %>% select(select_cluster)
+  
+  pcout <- c()
+  
+  for (j in 1:(nrow(cdf)-11)){
+    # cat(j, "\n")
+    cdat <- cdf[1:(j+11),] #12 period expanding window
+    cpca <- prcomp(cdat)
+    cpc <- cpca$x[,1] %>% tail(1) #last obs
+    pcout <- c(pcout, cpc)
+  }
+  
+  result <- bind_rows(result, tibble("cluster" = cluster_names[i],
+                                     "pc" = pcout))
+  
+}
+
+#PLOT1
+p1 <- result %>% bind_cols("id" = rep(tail(as.Date(paste0(df$ymon,"01"), format = "%Y%m%d"), length(pcout)), nclusters)) %>%
+  filter(id > "1993-01-01")%>%
+  
+ggplot()+
+  geom_line(aes(x = id, y = pc, col = as.factor(cluster)))+theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())+
+  labs(x="",y="",col="")+theme(legend.position='none')+scale_color_brewer(palette="Set1",direction=1)
+
+#PLOT2
+p2 <- tibble(ymon = tail(as.Date(paste0(df$ymon,"01"), format = "%Y%m%d"), length(pcout)),
+       pc = pcout)%>%
+  filter(ymon > "1993-01-01")%>%
+  
+ggplot()+
+  geom_line(aes(x=ymon,y=pc))+theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())+
+  labs(x="",y="First principal component",col="")
+
+gridExtra::grid.arrange(p2, p1, ncol = 2) #POSSIBLE PAPER PLOT
+
+
+
+
+
+# NOT USED----
+result$cluster <- as.factor(result$cluster)
+result <- result %>%
+  mutate(ymon = rep(rep(tail(as.Date(paste0(df$ymon,"01"), format = "%Y%m%d"), length(pcout))), nclusters))
+testres <- tibble(
+  "ymon" = rep(tail(as.Date(paste0(df$ymon,"01"), format = "%Y%m%d"), length(pcout))),
+  "m1" = result$pc[result$cluster=="macroc_1"],
+  "m2" = result$pc[result$cluster=="macroc_2"],
+  "m3" = result$pc[result$cluster=="macroc_3"],
+  "m4" = result$pc[result$cluster=="macroc_4"],
+  "m5" = result$pc[result$cluster=="macroc_5"]
+)
+
+
+
+
+
+
+# TEST
+library(dendextend)
+d_iris <- dist(t(kmsdat)) # method="man" # is a bit better
+hc_iris <- hclust(d_iris, method = "complete")
+dend <- as.dendrogram(hc_iris)
+dend <- rotate(dend, 1:110)
+dend <- color_branches(dend, k=5) #, groupLabels=iris_species)
+
+dend <- hang.dendrogram(dend,hang_height=0.01)
+
+par(mar = c(3,3,3,7))
+plot(dend, horiz=TRUE, nodePar = list(cex = .5))
 # =========================================================================
 # WRITE DATA
 # =========================================================================
@@ -258,62 +344,136 @@ ggplot(plotdat) +
 
 statedf <- bind_cols(df, "state" = cpca$x[,1]) %>% select(-ymon)
 
-# traintest split
-split_ratio <- 0.75
-x_vars <- colnames(statedf)[1:108] #hack
-y_vars <- "state"
-
-split_index <- 1:floor(split_ratio * nrow(statedf))
-
-train <- statedf[ split_index,]
-test  <- statedf[-split_index,]
-
-fit <- lm(state ~ ., train)
-
-pred <- predict(fit, newdata = test)
-
-test <- tibble(pred, test$state)
+# CORMATRIX
+library(corrplot)
+M <- cor(pcadat)
+corrplot(M, method = "color", type = "lower", tl.col="white")
 
 
-###############################################
-
-df$ymon <- as.character(df$ymon)
-df <- df %>%
-  select(-macropc1) %>%
-  left_join(df_export, by = "ymon")
-fit <- lm(RET ~ macropc1, df)
-summary(fit)
-plot(df$macropc1, df$RET)
-
-# =========================================================================
-# ETS forecasting
-# =========================================================================
-library(forecast)
-fdat <- df %>% select(-ymon)
-
-for (i in 1:ncol(fdat)){
-  cat("COL:", i, "\n")
+corr_simple <- function(data=pcadat,sig=0){
+  #convert data to numeric in order to run correlations
+  #convert to factor first to keep the integrity of the data - each value will become a number rather than turn into NA
+  df_cor <- data %>% mutate_if(is.character, as.factor)
+  df_cor <- df_cor %>% mutate_if(is.factor, as.numeric)
+  #run a correlation and drop the insignificant ones
+  corr <- cor(df_cor)
+  #prepare to drop duplicates and correlations of 1     
+  corr[lower.tri(corr,diag=TRUE)] <- NA 
+  #drop perfect correlations
+  corr[corr == 1] <- NA 
+  #turn into a 3-column table
+  corr <- as.data.frame(as.table(corr))
+  #remove the NA values from above 
+  corr <- na.omit(corr) 
+  #select significant values  
+  corr <- subset(corr, abs(Freq) > sig) 
+  #sort by highest correlation
+  corr <- corr[order(-abs(corr$Freq)),] 
+  #print table
+  print(corr)
+  #turn corr back into matrix in order to plot with corrplot
+  mtx_corr <- reshape2::acast(corr, Var1~Var2, value.var="Freq")
   
-  for (j in (nrow(fdat)-1):100){
-    cat("ROW:", j, "\n")
-    
-    cts <- ts(fdat[1:j,i] %>% pull, start = c(198410, 1), frequency = 12)
-    cm <- ets(cts, model = "ZZZ")
-    cf <- cm %>% forecast(h = 1)
-    cf <- cf[["mean"]][1]
-    fdat[j+1,i] <- cf
-    
-    cat(cf, "\n")
-    
-  }
+  #plot correlations visually
+  corrplot(mtx_corr, is.corr=FALSE, tl.col="black", na.label=" ", method="color", type="upper")
 }
+corr_simple()
+
+
+plotsave("macro_corplot.png")
+
+
+##################################################################
+# TESTING WELCH GOYAL
+welchgoyal <- read_csv("data_raw/welchgoyal.csv", col_types = cols(DATE = col_date(format = "%Y%m"))) %>%
+  rename(dp = D12,
+         ep = E12,
+         bm = `b/m`) %>%
+  select(-c(AAA, BAA))
+
+testres <- left_join(testres, welchgoyal, by = c("ymon" = "DATE")) %>% na.omit()
+
+
+lm(dp ~ m1+m2+m3+m4+m5, testres) %>% summary
+lm(ep ~ m1+m2+m3+m4+m5, testres) %>% summary
+lm(tbl ~ m1+m2+m3+m4+m5, testres) %>% summary
+lm(lty ~ m1+m2+m3+m4+m5, testres) %>% summary
+lm(ntis ~ m1+m2+m3+m4+m5, testres) %>% summary
+lm(infl ~ m1+m2+m3+m4+m5, testres) %>% summary
+lm(ltr ~ m1+m2+m3+m4+m5, testres) %>% summary
+lm(corpr ~ m1+m2+m3+m4+m5, testres) %>% summary
+lm(svar ~ m1+m2+m3+m4+m5, testres) %>% summary
+
+lm(dp ~ m1+m2, testres) %>% summary
+lm(ep ~ m1+m2, testres) %>% summary
+lm(tbl ~ m1+m2, testres) %>% summary
+lm(lty ~ m1+m2, testres) %>% summary
+lm(ntis ~ m1+m2, testres) %>% summary
+lm(infl ~ m1+m2, testres) %>% summary
+lm(ltr ~ m1+m2, testres) %>% summary
+lm(corpr ~ m1+m2, testres) %>% summary
+lm(svar ~ m1+m2, testres) %>% summary
 
 
 
-##
+testres <- left_join(testres, tibble("ymon" = tail(as.Date(paste0(df$ymon,"01"), format = "%Y%m%d"), length(pcout)),
+                                     "pc" = pcout),
+                     by = "ymon")
 
-plot(as.Date(paste0(df$ymon,"01"), format = "%Y%m%d"),
-     pc1, type = "l")
+
+lm(dp ~ pc, testres) %>% summary
+lm(ep ~ pc, testres) %>% summary
+lm(tbl ~ pc, testres) %>% summary
+lm(lty ~ pc, testres) %>% summary
+lm(ntis ~ pc, testres) %>% summary
+lm(infl ~ pc, testres) %>% summary
+lm(ltr ~ pc, testres) %>% summary
+lm(corpr ~ pc, testres) %>% summary
+lm(svar ~ pc, testres) %>% summary
+
+# WELCH GOYAL PCA
+library(ggfortify)
+
+
+wgpca <- prcomp(testres[,c("m1","m2","m3","m4","m5","tbl")])
+p1 <- autoplot(wgpca, loadings=T)+theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())+
+  labs(title="tbl")
+
+wgpca <- prcomp(testres[,c("m1","m2","m3","m4","m5","ntis")])
+p2 <- autoplot(wgpca, loadings=T)+theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())+
+  labs(title="ntis")
+
+wgpca <- prcomp(testres[,c("m1","m2","m3","m4","m5","ltr")])
+p3 <- autoplot(wgpca, loadings=T)+theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())+
+  labs(title="ltr")
+
+wgpca <- prcomp(testres[,c("m1","m2","m3","m4","m5","svar")])
+p4 <- autoplot(wgpca, loadings=T)+theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())+
+  labs(title="svar")
+
+gridExtra::grid.arrange(p1,p2,p3,p4,ncol=2)
+
+
+wgpca <- prcomp(testres[,c("m1","m2","m3","m4","m5")])
+p1 <- autoplot(wgpca, loadings=T)+theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())+
+  labs(title="Cluster components")
+
+wgpca <- prcomp(testres[,c("m1","m2","m3","m4","m5","tbl","ntis","ltr","svar")])
+p2 <- autoplot(wgpca, loadings=T)+theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())+
+  labs(title="+ tbl, ntis, ltr, svar")
+
+wgpca <- prcomp(testres[,c("m1","m2","m3","m4","m5", "ep", "dp", "tbl","ntis","ltr","svar")])
+p3 <- autoplot(wgpca, loadings=T)+theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())+
+  labs(title="+ dp, ep")
+
+gridExtra::grid.arrange(p1,p2,p3,ncol=3)
+
+fviz_eig(wgpca) #scree plot
+wgpc <- wgpca$x[,1]
+
+
+
+
 
 
 
