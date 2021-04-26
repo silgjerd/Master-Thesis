@@ -1,8 +1,9 @@
 rm(list=ls());options(scipen=999,stringsAsFactors=F)
 library(tidyverse);library(vroom)
 library(keras);library(caret);library(glmnet);library(xgboost)
+source("functions.R")
 
-load("data/traintest.RData")
+load("data/x_fullsample.RData")
 
 # =========================================================================
 # ELASTIC NET
@@ -10,8 +11,8 @@ load("data/traintest.RData")
 
 # Build
 control <- trainControl(method = "repeatedcv",
-                        number = 5, 
-                        repeats = 5, 
+                        number = 5,
+                        repeats = 2, 
                         search = "random", 
                         verboseIter = TRUE) 
 
@@ -23,11 +24,26 @@ elastic_model <- train(RET ~ .,
                        tuneLength = 25, 
                        trControl = control)
 
+
 # Test
 pred <- predict(elastic_model, x_test)
+eval <- mevaluate(pred, y_test)
+
+eval
+plot(pred, y_test)
+abline(a=0,b=1)
+abline(a=summary(lm(y_test~pred))$coef[1],b=summary(lm(y_test~pred))$coef[2],col="red")
 
 
-cat("MSE: ", mean((pred - y_test)^2), "\n") 
-cat("CORREL: ", cor(pred, y_test), "\n")
-# plot(enpred, y_test)
+
+#OLS TEST
+traindat <- data.frame("lme" = x_train[,"lme"],
+                       "bm" = x_train[,"bm"],
+                       "r12_2" = x_train[,"r12_2"])
+ols <- lm(y_train ~ lme + bm + r12_2, traindat)
+
+traindat <- data.frame("suv" = x_train[,"suv"])
+ols <- lm(y_train ~ suv, traindat)
+
+pred <- predict(ols, newdata = as.data.frame(x_test))
 
