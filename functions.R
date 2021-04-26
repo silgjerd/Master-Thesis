@@ -41,6 +41,12 @@ rangenorm <- function(df, x_vars, y_vars, split_index, range_min = 0, range_max 
   return(df_norm)
 }
 
+# ymon to date
+ymontodate <- function(ymon){
+  return(as.Date(paste0(ymon,"01"), format = "%Y%m%d"))
+  
+}
+
 # Model evaluation function
 mevaluate <- function(pred, y_test){
   
@@ -61,10 +67,10 @@ mevaluate <- function(pred, y_test){
 tradeevaluate <- function(rets){
   
   # Plot
-  plot(cumprod(1 + rets), type = "l")
+  plot(cumprod(c(1, (1 + rets))), type = "l")
   
   return(summary(rets))
 }
 
-
+annsharpe <- function(x) {(mean(x) * 12) / (sd(x) * sqrt(12))}
 
