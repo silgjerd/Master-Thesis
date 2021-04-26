@@ -1,6 +1,6 @@
 rm(list=ls());options(scipen=999,stringsAsFactors=F)
 library(tidyverse);library(vroom);library(lubridate)
-library(PerformanceAnalytics);library(RColorBrewer);library(corrplot)
+library(PerformanceAnalytics);library(RColorBrewer);library(corrplot);library(stargazer)
 source("functions.R")
 
 df <- vroom("data/x_exploration.csv")
@@ -43,7 +43,7 @@ df <- df %>%
 
 output <- c()
 
-quant <- 1/10
+quant <- 1/4
 ymons <- unique(df$ymon)
 cvars <- setdiff(colnames(df), c("ymon", "holdret"))
 
@@ -91,7 +91,7 @@ for (cvar in cvars){
 }
 
 output <- output %>% na.omit
-write.table(output, "data/data_alphaoutput.csv", append = F, row.names = F)
+write.table(output, "data/data_alphaoutput.csv", append = F, row.names = F, sep = ",")
 
 # aggtest <- output %>%
 #   group_by(var) %>%
@@ -119,7 +119,7 @@ write.table(output, "data/data_alphaoutput.csv", append = F, row.names = F)
 # =========================================================================
 # FF
 # =========================================================================
-output <- read.csv("data/data_alphaoutput.csv", sep = " ")
+output <- read.csv("data/data_alphaoutput.csv", sep = ",")
 
 ff <- vroom("data_raw/FF5F.CSV", col_types = cols(Date = col_date(format = "%Y%m")))
 ff <- ff %>%
@@ -147,7 +147,7 @@ lm(I(meannet-RF) ~ `Mkt-RF` + SMB + HML + RMW + CMA + MOM, subset(newdf, var=="l
 lm(I(meannet-RF) ~ `Mkt-RF` + SMB + HML, subset(newdf, var=="lme")) %>%
   summary %>% .[["coefficients"]] %>% .[1,1:3]
 
-
+# get all models
 outtable <- c()
 for (cvar in unique(newdf$var)){
   
@@ -167,6 +167,23 @@ for (cvar in unique(newdf$var)){
   
 }
 
+# get factor loadings from ff3m
+outtable <- c()
+for (cvar in unique(newdf$var)){
+  
+  ff3m <- lm(I(meannet-RF) ~ `Mkt-RF` + SMB + HML + MOM, subset(newdf, var==cvar)) %>% 
+    summary %>% .[["coefficients"]] %>% .[1:5,1:3] %>% t
+  
+  
+  
+  #outtable <- outtable %>% bind_rows(tibble(ff3m, cvar, coef = c("alpha", "sd", "t")))
+  
+  outtable <- outtable %>% bind_rows(tibble(data.frame(ff3m), cvar, coef=c("est","sd","t")))
+  
+  
+  
+}
+
 View(outtable %>% filter(coef=="t") %>% arrange(abs(ff5m)))
 
 
@@ -181,6 +198,8 @@ outtable <- output %>%
   summarise(meanret = mean(meannet)) %>%
   full_join(outtable, by = c("var" = "cvar"))
 
+
+stargazer(bind_cols(round(outtable %>% select(-c("cvar", "coef")), 2),outtable %>% select("cvar","coef")),type = "latex",summary = F)
 
 
 
