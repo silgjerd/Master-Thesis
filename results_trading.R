@@ -9,20 +9,17 @@ df <- tail(df, length(y_test))
 #######################################################################################
 
 
-# Residuals
-e <- pred - y_test
 
 # Appending preds
 df <- df %>%
-  mutate(pred = pred,
-         e = e)
+  mutate(pred = pred)
 
 
 # Quantile trading
 
 trading <- c()
-ymons <- unique(df$ymon)
-quant <- 1/2
+ymons <- unique(df$ymon)[-1]
+quant <- 1/4
 
 for (cymon in ymons){
   cat(cymon,"\n")
@@ -35,6 +32,8 @@ for (cymon in ymons){
   ret_net   <- ret_long - ret_short
   
   trading <- trading %>% bind_rows(tibble(
+    "model" = "en",
+    "sample" = "full",
     "ymon" = cymon,
     "sample_len" = sample_len,
     "ret_long" = mean(ret_long),
@@ -47,6 +46,23 @@ for (cymon in ymons){
 
 
 tradeevaluate(trading$ret_net)
+cat("SHARPE:",annsharpe(trading$ret_net))
+
+
+trading %>%
+  ggplot(aes(x = ymontodate(ymon)))+
+  geom_line(aes(y = cumprod(1+ret_long)),col="green")+
+  geom_line(aes(y = cumprod(1+ret_short)),col="red")+
+  geom_line(aes(y = cumprod(1+ret_net)))+theme_bw()
+
+
+
+
+
+
+
+
+
 
 
 
