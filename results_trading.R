@@ -6,6 +6,17 @@ source("functions.R")
 df <- vroom("data/x_exploration.csv")
 df <- tail(df, length(y_test))
 
+# Excess returns
+ff <- vroom("data_raw/FF.CSV", col_types = cols(Date = col_date(format = "%Y%m"))) %>%
+  mutate(ymon = ymon(Date),
+         RF = RF / 100) %>%
+  select(ymon, RF)
+df <- df %>%
+  mutate(ymon = as.character(ymon)) %>%
+  left_join(ff, by = "ymon") %>%
+  mutate(RET = RET - RF) %>%
+  select(-RF)
+
 #######################################################################################
 
 
