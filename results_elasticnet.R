@@ -33,7 +33,6 @@ abline(a=0,b=1)
 abline(a=summary(lm(y_test~pred))$coef[1],b=summary(lm(y_test~pred))$coef[2],col="red")
 
 
-# Variable importance
 
 
 #####################################################################
@@ -107,6 +106,8 @@ esg_g <- c("boardindep",
 
 esg_scores <- c("esgscore","esgcomb","esgcontr")
 #####################################################################
+# Feature sampling
+#####################################################################
 
 # Model
 getEVAL <- function(x_train, y_train, x_test, y_test){
@@ -114,7 +115,7 @@ getEVAL <- function(x_train, y_train, x_test, y_test){
   # Build
   control <- trainControl(method = "repeatedcv",
                           number = 5,
-                          repeats = 5,
+                          repeats = 1,
                           search = "random",
                           verboseIter = TRUE)
   # Train
@@ -234,6 +235,78 @@ output %>%
   coord_flip()+
   #scale_y_reverse()+
   theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())
+
+
+# ===========================================================================
+# Category shuffling/randomizing
+# ===========================================================================
+
+output <- c()
+
+samples <- list(
+  "sample" = c("none","E","S","G",
+               #"es","eg","sg",
+               "Scores","ESG"),
+  "exvars" = list(esgvars ,esg_e, esg_s, esg_g, esg_scores, NULL)
+)
+
+
+for (m in 1:2){ # simulations of models
+  control <- trainControl(method = "repeatedcv",
+                          number = 5,
+                          repeats = 1,
+                          search = "random",
+                          verboseIter = TRUE)
+  
+  elastic_model <- train(RET ~ .,
+                         data = cbind(x_train, y_train),
+                         method = "glmnet",
+                         #preProcess = c("center", "scale"),
+                         tuneLength = 25,
+                         trControl = control)
+  
+  
+  
+  
+  
+  for (sample in samples$sample){
+    cat(sample,"\n")
+    
+    for (i in 1:100){ # simulations of noise
+      #cat(i,"\n")
+      
+      # Randomize group of vars
+      rand_x_test <- x_test
+      
+      for (cvar in samples$exvars[[which(samples$sample==sample)]]) {
+        #cat(cvar,"\n")
+        
+        ci <- which(colnames(x_test)==cvar) #index of var
+        
+        noise <- runif(nrow(x_test), -0.5, 0.5) #randomized values
+        # noise <- 0
+        
+        rand_x_test[,ci] <- noise #replace with randomzied values
+      }
+      
+      # Test
+      pred <- predict(elastic_model, rand_x_test)
+      eval <- mevaluate(pred, y_test)
+      
+      output <- output %>% bind_rows(tibble(
+        "sample" = sample,
+        eval
+      ))
+      
+    }
+    
+  }
+}
+
+
+
+
+
 
 
 
