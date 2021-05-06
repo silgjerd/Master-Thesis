@@ -78,7 +78,7 @@ abline(a=summary(lm(y_test~pred))$coef[1],b=summary(lm(y_test~pred))$coef[2],col
 # Univariate effect
 
 
-univar <- seq(-0.5, 0.5, 0.01)
+univar <- seq(-0.49, 0.5, 0.01)
 
 
 # All vars = value
@@ -109,7 +109,8 @@ mean_x_test <- tibble(mean_x_test, .rows = 101) %>%
   as.matrix()
 
 #pred <- predict(mxgb, xgb.DMatrix(mean_x_test, label = matrix(seq_len(nrow(mean_x_test)))))
-pred <- predict(elastic_model, mean_x_test)
+#pred <- predict(elastic_model, mean_x_test)
+pred <- model %>% predict(mean_x_test)
 
 plot(univar, pred, type = "l")
 
@@ -137,8 +138,11 @@ for (i in seq(-0.5,0.5,0.05)){
   
 }
 
+
+
+
 # Multilevel plot (log as tibble)
-cvar <- "lme" #passive var
+cvar <- "beta" #passive var (colors)
 plotdat <- c()
 for (i in seq(-0.5,0.5,0.1)){
   
@@ -148,12 +152,14 @@ for (i in seq(-0.5,0.5,0.1)){
     summarise_all(mean) %>%
     mutate_at(c(cvar), samevaluefunc)
   
-  mean_x_test <- tibble(mean_x_test, .rows = 101) %>%
-    mutate("bm" = univar) %>%
+  mean_x_test <- tibble(mean_x_test, .rows = length(univar)) %>%
+    mutate("leverage" = univar) %>% #active var (x-axis)
     as.matrix()
   
+  
+  #pred <- predict(elastic_model, mean_x_test)
   #pred <- predict(mxgb, xgb.DMatrix(mean_x_test, label = matrix(seq_len(nrow(mean_x_test)))))
-  pred <- predict(elastic_model, mean_x_test)
+  pred <- model %>% predict(mean_x_test)
   
   plotdat <- plotdat %>% bind_rows(tibble("cvar" = "dunnoyeye",
                                           "valuepassive" = i,
@@ -167,7 +173,25 @@ plotdat %>%
   ggplot()+
   geom_line(aes(x = valueactive, y = pred, col = as.factor(valuepassive)))+
   theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())+
-  labs(x="CAPM Beta",y="Predicted excess return",col="Macro PC1")+scale_color_brewer(palette="RdYlGn",direction=1)
+  labs(x="active",y="Predicted excess return",col="passive")+scale_color_brewer(palette="RdYlGn",direction=1)
+
+
+# # 3D PLOT TEST--
+# library(plotly)
+# 
+# plotdat3d <- matrix(plotdat$pred, nrow = 5, ncol = length(univar)/5)
+# 
+# fig <- plot_ly(x = 1:5, y = 1:20,
+#                z = plotdat3d, type = "surface")
+# 
+# fig <- fig %>% layout(scene = list(
+#   xaxis = list(title = "Size", dtick = 1),
+#   yaxis = list(title = "B/M", dtick = 1),
+#   zaxis = list(title = "MSE")))
+# fig
+# 
+# 
+# #----
 
 
 
@@ -183,12 +207,13 @@ for (cvar in colnames(x_train)){
       summarise_all(mean) %>%
       mutate_at(c(cvar), samevaluefunc)
     
-    mean_x_test <- tibble(mean_x_test, .rows = 101) %>%
-      mutate("r12_2" = univar) %>%
+    mean_x_test <- tibble(mean_x_test, .rows = length(univar)) %>%
+      mutate("beta" = univar) %>% #active
       as.matrix()
     
     #pred <- predict(mxgb, xgb.DMatrix(mean_x_test, label = matrix(seq_len(nrow(mean_x_test)))))
-    pred <- predict(elastic_model, mean_x_test)
+    #pred <- predict(elastic_model, mean_x_test)
+    pred <- model %>% predict(mean_x_test)
     
     plotdat <- plotdat %>% bind_rows(tibble("cvar" = "dunnoyeye",
                                             "valuepassive" = i,
@@ -202,7 +227,7 @@ for (cvar in colnames(x_train)){
     ggplot()+
     geom_line(aes(x = valueactive, y = pred, col = as.factor(valuepassive)))+
     theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())+
-    labs(x="nonexecs",y="Predicted excess return",col=cvar)+scale_color_brewer(palette="RdYlGn",direction=1)
+    labs(x="active",y="Predicted excess return",col=cvar)+scale_color_brewer(palette="RdYlGn",direction=1)
   
   width <- 166
   height <- floor(width * 11/16)
@@ -217,6 +242,219 @@ for (cvar in colnames(x_train)){
 }
 
 
+# Multimodel ===============
+
+# All vars = mean
+mean_x_test <- x_test %>%
+  as_tibble() %>%
+  summarise_all(mean)
+
+
+mean_x_test <- tibble(mean_x_test, .rows = 101) %>%
+  mutate("esgcsr" = univar) %>%
+  as.matrix()
+
+pred_en  <- predict(elastic_model, mean_x_test)
+pred_xgb <- predict(mxgb, xgb.DMatrix(mean_x_test, label = matrix(seq_len(nrow(mean_x_test)))))
+pred_nn  <- pred <- model %>% predict(mean_x_test)
+
+# Plot
+p <- tibble(
+  univar,
+  "EN" = pred_en,
+  "XGB" = pred_xgb,
+  "NN" = pred_nn
+) %>%
+  #pivot_longer(c(pred_en, pred_xgb, pred_nn)) %>%
+  pivot_longer(c(EN,XGB,NN)) %>%
+  mutate(name=factor(name,levels=c("EN","XGB","NN")))%>%
+  ggplot(aes(x=univar))+
+  geom_line(aes(y=value,col=name))+
+  labs(x="r12_2",y="Predicted return",col="Model")+
+  theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())
+
+
+p
+
+#univar <- seq(0.5, -0.5, -0.01)
+
+width <- 166
+height <- floor(width * 11/16)
+ggsave("figures/modeleffects/r12_2.png",p,
+       width = width,
+       height = height,
+       dpi = 500,
+       units = "mm")
+
+
+# gridplot
+#1
+mean_x_test <- x_test %>%
+  as_tibble() %>%
+  summarise_all(mean)
+mean_x_test <- tibble(mean_x_test, .rows = 101) %>%
+  mutate("carbonint" = univar) %>%
+  as.matrix()
+pred_en  <- predict(elastic_model, mean_x_test)
+pred_xgb <- predict(mxgb, xgb.DMatrix(mean_x_test, label = matrix(seq_len(nrow(mean_x_test)))))
+pred_nn  <- pred <- model %>% predict(mean_x_test)
+
+p1 <- tibble(
+  univar,
+  "EN" = pred_en,
+  "XGB" = pred_xgb,
+  "NN" = pred_nn
+) %>%
+  pivot_longer(c(EN,XGB,NN)) %>%
+  mutate(name=factor(name,levels=c("EN","XGB","NN")))%>%
+  ggplot(aes(x=univar))+
+  geom_line(aes(y=value,col=name), show.legend = FALSE)+
+  labs(x="carbonint",y="Predicted return",col="")+
+  theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())
+
+#2
+mean_x_test <- x_test %>%
+  as_tibble() %>%
+  summarise_all(mean)
+mean_x_test <- tibble(mean_x_test, .rows = 101) %>%
+  mutate("esgcomm" = univar) %>%
+  as.matrix()
+pred_en  <- predict(elastic_model, mean_x_test)
+pred_xgb <- predict(mxgb, xgb.DMatrix(mean_x_test, label = matrix(seq_len(nrow(mean_x_test)))))
+pred_nn  <- pred <- model %>% predict(mean_x_test)
+
+p2 <- tibble(
+  univar,
+  "EN" = pred_en,
+  "XGB" = pred_xgb,
+  "NN" = pred_nn
+) %>%
+  pivot_longer(c(EN,XGB,NN)) %>%
+  mutate(name=factor(name,levels=c("EN","XGB","NN")))%>%
+  ggplot(aes(x=univar))+
+  geom_line(aes(y=value,col=name), show.legend = FALSE)+
+  labs(x="esgcomm",y="Predicted return",col="Model")+
+  theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())
+#3
+mean_x_test <- x_test %>%
+  as_tibble() %>%
+  summarise_all(mean)
+mean_x_test <- tibble(mean_x_test, .rows = 101) %>%
+  mutate("boardattend" = univar) %>%
+  as.matrix()
+pred_en  <- predict(elastic_model, mean_x_test)
+pred_xgb <- predict(mxgb, xgb.DMatrix(mean_x_test, label = matrix(seq_len(nrow(mean_x_test)))))
+pred_nn  <- pred <- model %>% predict(mean_x_test)
+
+p3 <- tibble(
+  univar,
+  "EN" = pred_en,
+  "XGB" = pred_xgb,
+  "NN" = pred_nn
+) %>%
+  pivot_longer(c(EN,XGB,NN)) %>%
+  mutate(name=factor(name,levels=c("EN","XGB","NN")))%>%
+  ggplot(aes(x=univar))+
+  geom_line(aes(y=value,col=name),show.legend = F)+
+  labs(x="boardattend",y="Predicted return",col="Model")+
+  theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())
+
+p <- gridExtra::arrangeGrob(p1,p2,p3,ncol=3)
+
+width <- 166*2
+height <- floor(width * 5/14)
+ggsave("figures/modeleffects/esgmodeleff.png",p,
+       width = width,
+       height = height,
+       dpi = 500,
+       units = "mm")
+
+###
+
+# gridplot
+#1
+mean_x_test <- x_test %>%
+  as_tibble() %>%
+  summarise_all(mean)
+mean_x_test <- tibble(mean_x_test, .rows = 101) %>%
+  mutate("lme" = univar) %>%
+  as.matrix()
+pred_en  <- predict(elastic_model, mean_x_test)
+pred_xgb <- predict(mxgb, xgb.DMatrix(mean_x_test, label = matrix(seq_len(nrow(mean_x_test)))))
+pred_nn  <- pred <- model %>% predict(mean_x_test)
+
+p1s <- tibble(
+  univar,
+  "EN" = pred_en,
+  "XGB" = pred_xgb,
+  "NN" = pred_nn
+) %>%
+  pivot_longer(c(EN,XGB,NN)) %>%
+  mutate(name=factor(name,levels=c("EN","XGB","NN")))%>%
+  ggplot(aes(x=univar))+
+  geom_line(aes(y=value,col=name), show.legend = T)+
+  labs(x="lme",y="Predicted return",col="")+
+  theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank(),legend.position = c(0.85, 0.8))
+
+#2
+mean_x_test <- x_test %>%
+  as_tibble() %>%
+  summarise_all(mean)
+mean_x_test <- tibble(mean_x_test, .rows = 101) %>%
+  mutate("bm" = univar) %>%
+  as.matrix()
+pred_en  <- predict(elastic_model, mean_x_test)
+pred_xgb <- predict(mxgb, xgb.DMatrix(mean_x_test, label = matrix(seq_len(nrow(mean_x_test)))))
+pred_nn  <- pred <- model %>% predict(mean_x_test)
+
+p2s <- tibble(
+  univar,
+  "EN" = pred_en,
+  "XGB" = pred_xgb,
+  "NN" = pred_nn
+) %>%
+  pivot_longer(c(EN,XGB,NN)) %>%
+  mutate(name=factor(name,levels=c("EN","XGB","NN")))%>%
+  ggplot(aes(x=univar))+
+  geom_line(aes(y=value,col=name), show.legend = FALSE)+
+  labs(x="bm",y="Predicted return",col="Model")+
+  theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())
+#3
+univar <- seq(0.5, -0.5, -0.01)
+mean_x_test <- x_test %>%
+  as_tibble() %>%
+  summarise_all(mean)
+mean_x_test <- tibble(mean_x_test, .rows = 101) %>%
+  mutate("r12_2" = univar) %>%
+  as.matrix()
+univar <- seq(-0.5, 0.5, 0.01)
+pred_en  <- predict(elastic_model, mean_x_test)
+pred_xgb <- predict(mxgb, xgb.DMatrix(mean_x_test, label = matrix(seq_len(nrow(mean_x_test)))))
+pred_nn  <- pred <- model %>% predict(mean_x_test)
+
+p3s <- tibble(
+  univar,
+  "EN" = pred_en,
+  "XGB" = pred_xgb,
+  "NN" = pred_nn
+) %>%
+  pivot_longer(c(EN,XGB,NN)) %>%
+  mutate(name=factor(name,levels=c("EN","XGB","NN")))%>%
+  ggplot(aes(x=univar))+
+  geom_line(aes(y=value,col=name), show.legend = FALSE)+
+  labs(x="r12_2",y="Predicted return",col="Model")+
+  theme_bw()+theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())
+
+
+p <- gridExtra::arrangeGrob(p1s,p2s,p3s,p1,p2,p3,ncol=3,nrow=2) #PLOT
+
+width <- 166*2
+height <- floor(width * 5*1.5/14)
+ggsave("figures/modeleffects/allmodeleff2.png",p,
+       width = width,
+       height = height,
+       dpi = 500,
+       units = "mm")
 
 # =================================================================================
 # SHAP
