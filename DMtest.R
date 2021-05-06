@@ -27,14 +27,36 @@ dm.test(e1 = e_1, e2 = e_2, power = 2)
 
 df <- vroom("preds_allmodels.csv")
 # df <- df %>% mutate(y_test = y_test)
+df <- (df - y_test)^2
+plot(colMeans(df))
+
+
+e1 <- (df$EN_ESG - y_test)^2
+e2 <- (df$XGB_E - y_test)^2
 
 
 
 
-e1 <- (df$EN_S - y_test)^2
-e2 <- (df$NN_ESG - y_test)^2
+# LOOP
+dmout <- matrix(nrow = ncol(df), ncol = ncol(df))
+for (i in seq_len(ncol(df))){
+  for (j in seq_len(ncol(df))){
+    cat(i,j,"\n")
+    
+    if (i==j){
+      dmout[i,j] <- NA
+      next
+    }
+    
+    cdm <- dm.test(e1 = df[,i], e2 = df[,j], power = 2)
+    
+    dmout[i,j] <- cdm[["statistic"]]
+    
+  }
+}
 
-dm.test(e1, e2, power = 2)
+
+
 
 
 
