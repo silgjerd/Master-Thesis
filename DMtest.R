@@ -25,7 +25,7 @@ dm.test(e1 = e_1, e2 = e_2, power = 2)
 # =================================================================================
 # DM TEST ALL
 
-df <- vroom("preds_allmodels.csv")
+df <- vroom("data/preds_allmodels2.csv")
 # df <- df %>% mutate(y_test = y_test)
 df <- (df - y_test)^2
 plot(colMeans(df))
@@ -55,11 +55,40 @@ for (i in seq_len(ncol(df))){
   }
 }
 
+dmout <- dmout %>% as_tibble()
+colnames(dmout) <- colnames(df)
+rownames(dmout) <- t(colnames(df))
 
 
 
 
 
+##
+corout <- c()
+for(i in 1:ncol(df)){
+  corout <- c(corout, (100*(cor(df[,i], y_test))^2)  )
+}
+corout <- (corout) %>% as_tibble()
+rownames(corout) <- colnames(df)
+
+
+
+
+
+
+# ADAPTING USING CROSS SECTIONAL AVERAGE
+tset <- vroom("data/x_exploration.csv")
+tset <- tail(tset, length(y_test))
+
+df <- df %>% bind_cols("ymon" = tset$ymon)
+df <- df %>%
+  group_by(ymon) %>%
+  summarise_all(mean) %>%
+  select(-ymon)
+
+
+
+dm.test(e1 = df$XGB_G, e2 = df$NN_G, power = 2)
 
 # =================================================================================
 # SAMPLES
@@ -138,91 +167,57 @@ esg_scores <- c("esgscore","esgcomb","esgcontr")
 # LOOP
 output <- c()
 
-samples <- list(
-  "sample" = c(#"none"#,
-               #"E",
-               "S"#,
-               #"G",
-               #"es","eg","sg",
-               #"Scores"#,
-               #"ESG"
-               ),
-  "exvars" = list(#esgvars#,
-                  #esg_e,
-                  esg_s,
-                  esg_g,
-                  esg_scores#,
-                  #NULL
-                  )
-)
 
 
-for (m in 1:1){ # simulations of models
-  # control <- trainControl(method = "repeatedcv",
-  #                         number = 5,
-  #                         repeats = 5,
-  #                         search = "random",
-  #                         verboseIter = TRUE)
-  # 
-  # elastic_model <- train(RET ~ .,
-  #                        data = cbind(x_train, y_train),
-  #                        method = "glmnet",
-  #                        #preProcess = c("center", "scale"),
-  #                        tuneLength = 25,
-  #                        trControl = control)
+for (i in 1:100){ # simulations of noise
+  #cat(i,"\n")
   
+  # Randomize group of vars
+  rand_x_test <- x_test
   
-  
-  
-  
-  for (sample in samples$sample){
-    cat(sample,"\n")
+  for (cvar in c(esg_e,esg_s,esg_scores)) { # which vars to shuffle
     
-    for (i in 1:100){ # simulations of noise
-      #cat(i,"\n")
-      
-      # Randomize group of vars
-      rand_x_test <- x_test
-      
-      #for (cvar in samples$exvars[[which(samples$sample==sample)]]) {
-      for (cvar in c(esg_e, esg_s, esg_scores)) { # which vars to shuffle
-        #cat(cvar,"\n")
-        
-        ci <- which(colnames(x_test)==cvar) #index of var
-        
-        noise <- runif(nrow(x_test), -0.5, 0.5) #randomized values
-        # noise <- 0
-        
-        rand_x_test[,ci] <- noise #replace with randomzied values
-      }
-      
-      # Test
-      # pred <- predict(elastic_model, rand_x_test)
-      # pred <- predict(mxgb, xgb.DMatrix(rand_x_test, label = y_test))
-      pred <- model %>% predict(rand_x_test)
-      eval <- mevaluate(pred, y_test)
-      
-      # output <- output %>% bind_rows(tibble(
-      #   "sample" = sample,
-      #   eval
-      # ))
-      
-      output <- output %>% bind_cols(tibble(
-        pred
-      ))
-      
-    }
+    ci <- which(colnames(x_test)==cvar) #index of var
     
+    noise <- runif(nrow(x_test), -0.5, 0.5) #randomized values
+    
+    rand_x_test[,ci] <- noise #replace with randomzied values
   }
+  
+  # Test
+  # pred <- predict(elastic_model, rand_x_test)
+  # pred <- predict(mxgb, xgb.DMatrix(rand_x_test, label = y_test))
+  pred <- model %>% predict(rand_x_test)
+  
+  # eval <- mevaluate(pred, y_test)
+  
+  output <- output %>% bind_cols(tibble(
+    pred
+  ))
+  
 }
 
+
 pred <- rowMeans(output)
-pred_1 <- rowMeans(output)
-pred_2 <- rowMeans(output)
-
-
 
 write.table(pred, "predasd.csv",sep=",",row.names = F, append = F)
+
+
+
+
+# TEST TO FIND NN MODEL
+
+
+model <- load_model_hdf5("h5/model164.h5")
+pred <- model %>% predict(rand_x_test)
+eval <- mevaluate(pred, y_test)
+cat(eval$COR)
+
+
+
+
+
+
 
 # =================================================================================
 # EN
@@ -329,4 +324,28 @@ history <- model %>% fit(
       restore_best_weights = TRUE
     ))
 )
+
+
+# PLOTS ############
+
+df %>%
+  select(c(EN_none, XGB_none, NN_none)) %>%
+  pivot_longer(c(EN_none, XGB_none, NN_none)) %>%
+  mutate(y = rep(y_test,3))%>%
+  ggplot()+
+  geom_point(aes(x = value,y=y,col=as.factor(name)))
+
+
+
+
+
+library(stargazer)
+testlm <- lm(df$EN_ESG ~ df$EN_E + df$EN_S + df$EN_G)
+testlm2 <- lm(df$XGB_ESG ~ df$XGB_E + df$XGB_S + df$XGB_G)
+testlm3 <- lm(df$NN_ESG ~ df$NN_E + df$NN_S + df$NN_G)
+stargazer(testlm, testlm2, testlm3)
+
+
+
+
 
